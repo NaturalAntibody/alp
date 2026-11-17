@@ -1,7 +1,6 @@
 # alp
 
-Standalone Python wrapper over the NCBI **ALP** library (Sheetlin & Frith,
-public domain) for computing the Gumbel / Karlin–Altschul parameters
+Standalone Python wrapper over the NCBI **ALP** library ([Sheetlin & Frith, ALP & FALP: C++ libraries for pairwise local alignment E-values](https://academic.oup.com/bioinformatics/article/32/2/304/1744607)) for computing the Gumbel / Karlin–Altschul parameters
 (λ, K and the finite-size corrections a, b, α, β, σ, τ) of local alignment
 scores. Use these parameters to turn raw Smith–Waterman scores into bit-scores
 and E-values.
