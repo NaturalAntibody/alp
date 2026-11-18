@@ -1,0 +1,127 @@
+name: CI
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+env:
+  python-version: "3.10"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.python-version }}
+          enable-cache: true
+      - name: Install project
+        run: uv sync --locked
+      - name: Test
+        run: uv run pytest
+
+  release:
+    needs: test
+    if: ${{ github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.python-version }}
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "action@github.com"
+          uv run --only-group release semantic-release version
+
+  # Runs on pull requests too (release is skipped there), so platform build breakage shows up before merge.
+  wheels:
+    needs: release
+    if: ${{ !cancelled() && !failure() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # On master build the commit with the version bumped by the release job.
+          ref: ${{ github.ref == 'refs/heads/master' && 'master' || '' }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - uses: pypa/cibuildwheel@v4.3.5
+        with:
+          output-dir: dist
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels_${{ matrix.os }}
+          path: dist
+
+  sdist:
+    needs: release
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref == 'refs/heads/master' && 'master' || '' }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Build sdist
+        run: uv build --sdist
+      - name: Upload sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdist
+          path: dist
+
+  publish:
+    needs: [wheels, sdist]
+    if: ${{ github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: master
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.python-version }}
+      - name: Upload artifacts to the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "action@github.com"
+          uv run --only-group release semantic-release publish
+      - name: Publish package distributions to PyPI
+        # Trusted publishing; --check-url skips files already on PyPI (a push without a new version).
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/

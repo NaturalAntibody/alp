@@ -1,4 +1,4 @@
-"""ctypes wrapper over ``libalp.so`` (NCBI ALP library)."""
+"""ctypes wrapper over ``libalp`` (NCBI ALP library)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import functools
 import math
 import os
 import pathlib
+import sys
 from dataclasses import dataclass, field
 from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
 
@@ -16,12 +17,21 @@ from ._matrices import AA_ALPHABET, BLOSUM
 # Library loading
 # ---------------------------------------------------------------------------
 
-_LIB_NAME = "libalp.so"
+if sys.platform == "win32":
+    _LIB_NAME = "libalp.dll"
+elif sys.platform == "darwin":
+    _LIB_NAME = "libalp.dylib"
+else:
+    _LIB_NAME = "libalp.so"
 
 
 def _load_library() -> ctypes.CDLL:
     here = pathlib.Path(__file__).resolve().parent
-    candidates = [here / _LIB_NAME, here.parent / "build" / _LIB_NAME]
+    # Every directory of the `alp` package: for an editable install this is
+    # both the source dir and the site-packages dir holding the built library.
+    package_dirs = [pathlib.Path(p) for p in sys.modules[__package__].__path__]
+    candidates = [d / _LIB_NAME for d in package_dirs]
+    candidates.append(here.parent / "build" / _LIB_NAME)  # plain `cmake -B build`
     env = os.environ.get("ALP_LIB")
     if env:
         candidates.insert(0, pathlib.Path(env))
@@ -29,8 +39,9 @@ def _load_library() -> ctypes.CDLL:
         if p.exists():
             return ctypes.CDLL(str(p))
     raise OSError(
-        f"Cannot find {_LIB_NAME}. Build it with `pip install .` (or "
-        "`cmake -B build && cmake --build build`) or set ALP_LIB."
+        f"Cannot find {_LIB_NAME}. Install the package (`uv sync` or "
+        "`pip install .`), build it with `cmake -B build && cmake --build build`, "
+        "or set ALP_LIB."
     )
 
 
@@ -434,7 +445,9 @@ def compute_gumbel_params(
     n_samples : int or None, default 20000
         Number of importance-sampling realizations for the gapped simulation
         (fixed-plan mode).  The result is a pure function of the inputs and
-        ``seed``: bit-identical across runs, machine speed and load.
+        ``seed``: bit-identical across runs, machine speed and load on one
+        build, and equal up to floating-point rounding (~1e-14 relative)
+        across platforms and compilers.
         ``lambda_tolerance``/``k_tolerance`` are ignored and ``max_seconds``
         only acts as a hard timeout (``ALPError``).  Larger values reduce the
         statistical error roughly as 1/sqrt(n) and cost linear time.

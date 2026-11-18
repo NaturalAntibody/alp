@@ -12,14 +12,40 @@ with **no runtime Python dependencies**.
 ## Install
 
 ```bash
-pip install .            # needs a C++17 compiler; cmake is pulled in automatically
-# or, for development:
-pip install cmake && python scripts/build_ext.py && pip install -e '.[test]'
-pytest
+pip install alp-na       # prebuilt wheels for Linux, macOS and Windows
 ```
 
-The shared library is looked up next to the package, then in `./build/`;
-`ALP_LIB=/path/to/libalp.so` overrides both.
+The distribution is named `alp-na` on PyPI (`alp` is taken by an unrelated
+project); the import name is still `alp`.
+
+## Development
+
+The project is managed with [uv](https://docs.astral.sh/uv/) and built with
+[scikit-build-core](https://scikit-build-core.readthedocs.io/) (CMake). You need
+a C++17 compiler; CMake is installed into the isolated build environment
+automatically.
+
+```bash
+uv sync               # create .venv, build libalp, install dev deps
+uv run pytest         # run the tests
+uv build              # build the sdist and a wheel for this machine into dist/
+```
+
+`uv sync` rebuilds the library whenever `CMakeLists.txt` or a C++ source
+changes; the CMake build tree is kept in `build/` so rebuilds are incremental.
+
+The shared library (`libalp.so` / `libalp.dylib` / `libalp.dll`) is looked up in
+the package directories, then in `./build/` (a plain
+`cmake -B build && cmake --build build`); `ALP_LIB=/path/to/libalp.so`
+overrides both.
+
+## Releasing
+
+Every push to `master` runs `.github/workflows/ci.yml`: python-semantic-release
+bumps the version from the conventional commits (and refreshes `uv.lock`),
+cibuildwheel builds one `py3-none` wheel each for Linux (x86_64, aarch64), macOS
+(universal2) and Windows (AMD64), `uv build --sdist` builds the sdist, and
+`uv publish` uploads everything to PyPI with trusted publishing.
 
 ## Usage
 
@@ -81,8 +107,9 @@ valid local statistics (no positive score or non-negative expected score).
   loaded machine gave K and α values 3.5% and 10% different. This package
   therefore defaults to a fixed plan (`n_samples=20000`). Results are
   bit-identical across runs, load and `max_seconds`. They depend only on
-  the inputs, the seed and the build, because floating-point differences
-  between compilers or math libraries could still change them.
+  the inputs, the seed and the build: across platforms and compilers the
+  random sample paths are the same, but floating-point rounding differs in
+  the last digits (~1e-14 relative; checked in CI on Linux, macOS and Windows).
 * **Accuracy vs `n_samples`.** Statistical error is roughly ∝ 1/√n and
   runtime is linear in n. At 20000, λ is good to ≤0.5% and K to ≤2%. The
   finite-size α/σ converge more slowly and are biased low at small n for
