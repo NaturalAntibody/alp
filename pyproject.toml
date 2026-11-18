@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "alp-na"
-version = "0.1.0"
+version = "1.0.0"
 description = "Gumbel (Karlin-Altschul) parameters for local alignment scores via the NCBI ALP library"
 readme = "README.md"
 authors = [{ name = "NaturalAntibody" }]
