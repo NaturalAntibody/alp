@@ -107,8 +107,9 @@ valid local statistics (no positive score or non-negative expected score).
   loaded machine gave K and α values 3.5% and 10% different. This package
   therefore defaults to a fixed plan (`n_samples=20000`). Results are
   bit-identical across runs, load and `max_seconds`. They depend only on
-  the inputs, the seed and the build, because floating-point differences
-  between compilers or math libraries could still change them.
+  the inputs, the seed and the build: across platforms and compilers the
+  random sample paths are the same, but floating-point rounding differs in
+  the last digits (~1e-14 relative; checked in CI on Linux, macOS and Windows).
 * **Accuracy vs `n_samples`.** Statistical error is roughly ∝ 1/√n and
   runtime is linear in n. At 20000, λ is good to ≤0.5% and K to ≤2%. The
   finite-size α/σ converge more slowly and are biased low at small n for

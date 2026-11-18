@@ -16,6 +16,22 @@ from alp import (
 MMSEQS_BLOSUM62_GAPLESS = (0.3207378152604042354, 0.13904657125294345166, 0.76221128839920349041)
 MMSEQS_NUCLEOTIDE_5_2 = (0.62092274139392822363, 0.35177597988201619872, 0.74528059208662511548)
 
+# Fixed-plan results (n_samples=3000, seed=42) recorded on Linux x86_64. Fixed-plan
+# mode follows the same random sample paths on every platform, so results agree
+# up to floating-point rounding of the compiler / CPU / libm (observed ~5e-15
+# relative between machines); a diverging random stream would show up at ~1e-2.
+# riot_na relies on this for its precomputed Gumbel parameters.
+FIXED_PLAN_GOLDEN = [
+    (
+        dict(matrix="blosum62", gap_open=11, gap_extend=1),
+        (0.2684932609082304, 0.0448870876603302, 1.7020610197124042),
+    ),
+    (
+        dict(match=2, mismatch=3, gap_open=5, gap_extend=2),
+        (0.6192463963818968, 0.3627216415820423, 0.7718561655102738),
+    ),
+]
+
 
 def blosum62_dict():
     m = BLOSUM["blosum62"]
@@ -83,6 +99,11 @@ class TestMatrixInput:
         assert a.samples_used == (3000, 3000)
         assert compute_gumbel_params("blosum62", gap_open=11, gap_extend=1).samples_used == (20000, 20000)
 
+    @pytest.mark.parametrize("kwargs, expected", FIXED_PLAN_GOLDEN)
+    def test_fixed_plan_identical_across_platforms(self, kwargs, expected):
+        p = compute_gumbel_params(**kwargs, n_samples=3000, seed=42)
+        assert (p.lambda_, p.K, p.a_I) == pytest.approx(expected, rel=1e-12)
+
     def test_adaptive_mode(self):
         p = compute_gumbel_params("blosum62", gap_open=11, gap_extend=1, n_samples=None)
         assert p.lambda_ == pytest.approx(0.267, rel=0.01)
@@ -105,12 +126,15 @@ class TestMatrixInput:
 
 class TestMatchMismatch:
     def test_reproduces_mmseqs_nucleotide_5_2(self):
-        # MMseqs2 ran ALP in adaptive mode (tolerances 0.01/0.05, 60 s, seed 42)
+        # MMseqs2 ran ALP in adaptive mode (tolerances 0.01/0.05, 60 s, seed 42).
+        # Adaptive mode sizes its samples from measured run time, so the result
+        # is only reproducible to the requested accuracy, not bit-for-bit: on a
+        # slower machine (e.g. a Windows CI runner) lambda differs at ~5e-5.
         p = compute_gumbel_params(match=2, mismatch=3, gap_open=5, gap_extend=2, n_samples=None)
         lam, k, a = MMSEQS_NUCLEOTIDE_5_2
-        assert p.lambda_ == pytest.approx(lam, rel=1e-9)
-        assert p.K == pytest.approx(k, rel=1e-9)
-        assert p.a_I == pytest.approx(a, rel=1e-9)
+        assert p.lambda_ == pytest.approx(lam, rel=0.01)
+        assert p.K == pytest.approx(k, rel=0.05)
+        assert p.a_I == pytest.approx(a, rel=0.05)
 
     def test_mismatch_sign_is_irrelevant(self):
         a = compute_gumbel_params(match=1, mismatch=-2, gap_open=5, gap_extend=2)

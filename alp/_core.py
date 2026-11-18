@@ -445,7 +445,9 @@ def compute_gumbel_params(
     n_samples : int or None, default 20000
         Number of importance-sampling realizations for the gapped simulation
         (fixed-plan mode).  The result is a pure function of the inputs and
-        ``seed``: bit-identical across runs, machine speed and load.
+        ``seed``: bit-identical across runs, machine speed and load on one
+        build, and equal up to floating-point rounding (~1e-14 relative)
+        across platforms and compilers.
         ``lambda_tolerance``/``k_tolerance`` are ignored and ``max_seconds``
         only acts as a hard timeout (``ALPError``).  Larger values reduce the
         statistical error roughly as 1/sqrt(n) and cost linear time.
