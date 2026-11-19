@@ -1,0 +1,65 @@
+name: Dependency Submission
+
+on:
+  # trigger manually (e.g. for initial setup)
+  workflow_dispatch:
+  # trigger when uv.lock (or this workflow) changes on/against the default branch.
+  pull_request:
+    branches: ['main', 'master']
+    paths:
+      - '**/uv.lock'
+      - '.github/workflows/dependency-submission.yml'
+  push:
+    branches: ['main', 'master']
+    paths:
+      - '**/uv.lock'
+      - '.github/workflows/dependency-submission.yml'
+
+# Drop the broad default GITHUB_TOKEN permissions for least-privilege:
+# https://docs.zizmor.sh/audits/#excessive-permissions
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-submission:
+    name: Submit uv dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # needs to submit dependency graph data
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Submit dependency snapshot
+        uses: rmuir/uv-dependency-submission@8c650a3e5e519b93e604e644f7a4a3953144babe # v1.1.1
+
+  dependency-review:
+    name: Review dependency changes
+    # Compare against the snapshot submitted above, so wait for it.
+    needs: dependency-submission
+    # A manual run has no base to compare against.
+    if: ${{ github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Dependency review
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          retry-on-snapshot-warnings: true
+
+      - name: Dependency review - master
+        if: ${{ github.event_name == 'push' }}
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          base-ref: ${{ github.event.before }}
+          head-ref: ${{ github.sha }}
+          retry-on-snapshot-warnings: true
