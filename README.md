@@ -41,7 +41,9 @@ overrides both.
 
 ## Releasing
 
-Every push to `master` runs `.github/workflows/ci.yml`: python-semantic-release
+Pull requests run `.github/workflows/pull-request.yml` (tests, then wheels and
+sdist for every platform). Every push to `master` runs
+`.github/workflows/push-master.yml`: tests, then python-semantic-release
 bumps the version from the conventional commits (and refreshes `uv.lock`),
 cibuildwheel builds one `py3-none` wheel each for Linux (x86_64, aarch64), macOS
 (universal2) and Windows (AMD64), `uv build --sdist` builds the sdist, and
