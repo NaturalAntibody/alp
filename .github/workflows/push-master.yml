@@ -1,9 +1,17 @@
+# Follows python-semantic-release's recommended "Common Workflow Example":
+# https://python-semantic-release.readthedocs.io/en/latest/configuration/automatic-releases/github-actions.html
+# Differences: semantic-release runs via its CLI (`uv run`), because the build_command needs uv, which the
+# Docker-based action does not have; and wheels are built per platform in a separate job after the release.
 name: Push to master flow - release, build and publish
 
 on:
   push:
     branches:
       - master
+
+# default: least privileged permissions across all jobs
+permissions:
+  contents: read
 
 env:
   python-version: "3.10"
@@ -16,69 +24,97 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     environment: release
+    # Prevent race conditions between release jobs when several pushes land on master in a short period.
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
     outputs:
-      # The commit to build and publish: the version bump commit, or the pushed one when there is no release.
-      sha: ${{ steps.release.outputs.sha }}
+      released: ${{ steps.release.outputs.released || 'false' }}
+      tag: ${{ steps.release.outputs.tag }}
+      commit_sha: ${{ steps.release.outputs.commit_sha }}
     steps:
-      - name: Checkout
+      # Note: We checkout the repository at the branch that triggered the workflow. However, we
+      # forcefully reset the branch to the workflow sha because it is possible that the branch was
+      # updated while the workflow was running, which prevents accidentally releasing un-evaluated
+      # changes. (Full history so that the workflow sha is present even if the branch moved on.)
+      - name: Setup | Checkout Repository on Release Branch
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Install uv
+
+      - name: Setup | Force release branch to be at workflow sha
+        run: git reset --hard ${{ github.sha }}
+
+      - name: Setup | Install uv
         uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ env.python-version }}
-      - name: Create release
+
+      # Writes the released / tag / commit_sha outputs to $GITHUB_OUTPUT, like the official action.
+      - name: Action | Semantic Version Release
         id: release
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git config --global user.name "github-actions"
-          git config --global user.email "action@github.com"
+          git config --global user.email "actions@users.noreply.github.com"
           uv run --only-group release semantic-release version
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   build:
     needs: release
+    if: ${{ needs.release.outputs.released == 'true' }}
     uses: ./.github/workflows/build.yml
     with:
-      ref: ${{ needs.release.outputs.sha }}
+      ref: ${{ needs.release.outputs.commit_sha }}
 
   publish:
+    # Equivalent of python-semantic-release/publish-action: upload the built files to the release.
     needs: [release, build]
+    if: ${{ needs.release.outputs.released == 'true' }}
     runs-on: ubuntu-latest
     environment: release
     permissions:
-      contents: read
-      # IMPORTANT: this permission is mandatory for trusted publishing
-      id-token: write
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.release.outputs.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Put the release commit on the master branch
-        # semantic-release refuses to run on the detached HEAD left by checking out a SHA.
-        run: git switch -C "$GITHUB_REF_NAME"
-      - name: Download artifacts
+      - name: Setup | Download Build Artifacts
         uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          python-version: ${{ env.python-version }}
-      - name: Upload artifacts to the GitHub release
+
+      - name: Publish | Upload to GitHub Release Assets
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "action@github.com"
-          uv run --only-group release semantic-release publish
+          TAG: ${{ needs.release.outputs.tag }}
+        run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+
+  deploy:
+    # 1. Separate out the deploy step from the publish step to run each step at
+    #    the least amount of token privilege
+    # 2. Also, deployments can fail, and its better to have a separate job if you need to retry
+    #    and it won't require reversing the release.
+    needs: [release, build]
+    if: ${{ needs.release.outputs.released == 'true' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # mandatory for trusted publishing
+    steps:
+      - name: Setup | Download Build Artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      # see https://docs.pypi.org/trusted-publishers/
       - name: Publish package distributions to PyPI
-        # Trusted publishing; --check-url skips files already on PyPI (a push without a new version).
-        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist
+          print-hash: true
+          verbose: true

@@ -43,11 +43,14 @@ overrides both.
 
 Pull requests run `.github/workflows/pull-request.yml` (tests, then wheels and
 sdist for every platform). Every push to `master` runs
-`.github/workflows/push-master.yml`: tests, then python-semantic-release
+`.github/workflows/push-master.yml` (following python-semantic-release's
+recommended workflow): tests, then python-semantic-release
 bumps the version from the conventional commits (and refreshes `uv.lock`),
 cibuildwheel builds one `py3-none` wheel each for Linux (x86_64, aarch64), macOS
-(universal2) and Windows (AMD64), `uv build --sdist` builds the sdist, and
-`uv publish` uploads everything to PyPI with trusted publishing.
+(universal2) and Windows (AMD64), `uv build --sdist` builds
+the sdist; the files are then attached to the GitHub release and uploaded to
+PyPI with trusted publishing. Build and publish only run when a new version
+was released.
 
 ## Usage
 
