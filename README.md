@@ -1,56 +1,27 @@
 # alp
 
-Standalone Python wrapper over the NCBI **ALP** library ([Sheetlin & Frith, ALP & FALP: C++ libraries for pairwise local alignment E-values](https://academic.oup.com/bioinformatics/article/32/2/304/1744607)) for computing the Gumbel / Karlin–Altschul parameters
-(λ, K and the finite-size corrections a, b, α, β, σ, τ) of local alignment
-scores. Use these parameters to turn raw Smith–Waterman scores into bit-scores
-and E-values.
+[![PyPI](https://img.shields.io/pypi/v/alp-na)](https://pypi.org/project/alp-na/)
+[![Push to master](https://github.com/NaturalAntibody/alp/actions/workflows/push-master.yml/badge.svg)](https://github.com/NaturalAntibody/alp/actions/workflows/push-master.yml)
 
-The directory is self-contained: it ships its own copy of ALP (`lib/alp`), a
+Standalone Python wrapper over the NCBI **ALP** library
+([Sheetlin & Frith, *ALP & FALP: C++ libraries for pairwise local alignment E-values*](https://academic.oup.com/bioinformatics/article/32/2/304/1744607))
+for computing the Gumbel / Karlin–Altschul parameters (λ, K and the finite-size
+corrections a, b, α, β, σ, τ) of local alignment scores. Use these parameters to
+turn raw Smith–Waterman scores into bit-scores and E-values.
+
+The package is self-contained: it ships its own copy of ALP (`lib/alp`), a
 small C API (`src/alp_api.{h,cpp}`), a CMake build and a ctypes package
 with **no runtime Python dependencies**.
 
-## Install
+## Installation
 
 ```bash
 pip install alp-na       # prebuilt wheels for Linux, macOS and Windows
 ```
 
-The distribution is named `alp-na` on PyPI (`alp` is taken by an unrelated
-project); the import name is still `alp`.
-
-## Development
-
-The project is managed with [uv](https://docs.astral.sh/uv/) and built with
-[scikit-build-core](https://scikit-build-core.readthedocs.io/) (CMake). You need
-a C++17 compiler; CMake is installed into the isolated build environment
-automatically.
-
-```bash
-uv sync               # create .venv, build libalp, install dev deps
-uv run pytest         # run the tests
-uv build              # build the sdist and a wheel for this machine into dist/
-```
-
-`uv sync` rebuilds the library whenever `CMakeLists.txt` or a C++ source
-changes; the CMake build tree is kept in `build/` so rebuilds are incremental.
-
-The shared library (`libalp.so` / `libalp.dylib` / `libalp.dll`) is looked up in
-the package directories, then in `./build/` (a plain
-`cmake -B build && cmake --build build`); `ALP_LIB=/path/to/libalp.so`
-overrides both.
-
-## Releasing
-
-Pull requests run `.github/workflows/pull-request.yml` (tests, then wheels and
-sdist for every platform). Every push to `master` runs
-`.github/workflows/push-master.yml` (following python-semantic-release's
-recommended workflow): tests, then python-semantic-release
-bumps the version from the conventional commits (and refreshes `uv.lock`),
-cibuildwheel builds one `py3-none` wheel each for Linux (x86_64, aarch64), macOS
-(universal2) and Windows (AMD64), `uv build --sdist` builds
-the sdist; the files are then attached to the GitHub release and uploaded to
-PyPI with trusted publishing. Build and publish only run when a new version
-was released.
+> [!NOTE]
+> The distribution is named `alp-na` on PyPI (`alp` is taken by an unrelated
+> project); the import name is still `alp`.
 
 ## Usage
 
@@ -88,25 +59,27 @@ system. Within a process, results are also memoised.
 
 ### Options
 
-| argument | default | meaning |
+| Argument | Default | Meaning |
 |---|---|---|
-| `alphabet` | auto | symbol order; for dict matrices the 20 standard amino acids are used when present (B/Z/X/\* are dropped) |
-| `bg_freqs`, `bg_freqs2` | Robinson for 20 AA, else uniform | `"uniform"`, `"robinson"`/`"blast"` (BLAST's Robinson & Robinson), `"blosum62"`/`"mmseqs"` (BLOSUM62 background, as in MMseqs2), a mapping, or a sequence; `bg_freqs2` for sequence #2 |
-| `gap_convention` | `"ncbi"` | `"ncbi"`: gap of length k costs `open + k·extend` (ALP, BLAST, MMseqs2). `"open_includes_extend"`: `open + (k−1)·extend` (SSW, parasail); converted before calling ALP |
-| `n_samples` | 20000 | fixed number of simulation samples, so results are bit-identical for given inputs and seed. `None` = ALP's adaptive mode (see below) |
-| `n_preliminary_samples` | 200 | samples per preliminary stage (fixed mode) |
-| `lambda_tolerance`, `k_tolerance` | 0.01, 0.05 | target relative errors (adaptive mode only) |
-| `max_seconds` | `None` | no time limit by default. If set, it is a hard timeout (`ALPError`) in fixed and gapless mode; in adaptive mode it is ALP's planning budget (default 60 s) |
-| `max_mem_mb` | 500 | memory limit |
-| `seed` | 42 | random seed |
+| `alphabet` | auto | Symbol order; for dict matrices the 20 standard amino acids are used when present (B/Z/X/\* are dropped). |
+| `bg_freqs`, `bg_freqs2` | Robinson for 20 AA, else uniform | `"uniform"`, `"robinson"`/`"blast"` (BLAST's Robinson & Robinson), `"blosum62"`/`"mmseqs"` (BLOSUM62 background, as in MMseqs2), a mapping, or a sequence; `bg_freqs2` for sequence #2. |
+| `gap_convention` | `"ncbi"` | `"ncbi"`: gap of length k costs `open + k·extend` (ALP, BLAST, MMseqs2). `"open_includes_extend"`: `open + (k−1)·extend` (SSW, parasail); converted before calling ALP. |
+| `n_samples` | 20000 | Fixed number of simulation samples, so results are bit-identical for given inputs and seed. `None` = ALP's adaptive mode (see [Notes](#notes)). |
+| `n_preliminary_samples` | 200 | Samples per preliminary stage (fixed mode). |
+| `lambda_tolerance`, `k_tolerance` | 0.01, 0.05 | Target relative errors (adaptive mode only). |
+| `max_seconds` | `None` | No time limit by default. If set, it is a hard timeout (`ALPError`) in fixed and gapless mode; in adaptive mode it is ALP's planning budget (default 60 s). |
+| `max_mem_mb` | 500 | Memory limit. |
+| `seed` | 42 | Random seed. |
 
-`ValueError` is raised for invalid input, including scoring systems with no
-valid local statistics (no positive score or non-negative expected score).
-`ALPError` is raised when ALP itself fails.
+### Errors
+
+- `ValueError` is raised for invalid input, including scoring systems with no
+  valid local statistics (no positive score or non-negative expected score).
+- `ALPError` is raised when ALP itself fails.
 
 ## Notes
 
-* **Reproducibility.** By default ALP chooses its sample sizes adaptively,
+- **Reproducibility.** By default ALP chooses its sample sizes adaptively,
   from the tolerances *and* from measured run time. With a binding time
   limit, results then depend on machine speed and load: BLOSUM62 9/1 on a
   loaded machine gave K and α values 3.5% and 10% different. This package
@@ -115,22 +88,22 @@ valid local statistics (no positive score or non-negative expected score).
   the inputs, the seed and the build: across platforms and compilers the
   random sample paths are the same, but floating-point rounding differs in
   the last digits (~1e-14 relative; checked in CI on Linux, macOS and Windows).
-* **Accuracy vs `n_samples`.** Statistical error is roughly ∝ 1/√n and
+- **Accuracy vs `n_samples`.** Statistical error is roughly ∝ 1/√n and
   runtime is linear in n. At 20000, λ is good to ≤0.5% and K to ≤2%. The
   finite-size α/σ converge more slowly and are biased low at small n for
   low gap costs. Raise `n_samples` (e.g. 100000) when E-values for short
   sequences matter. Runtime at 20000 is ~2.5 s for BLOSUM62 11/1, ~10 s for
   9/1 and ~36 s for BLOSUM45 16/1.
-* `n_samples=None` (seed 42, tolerances 0.01/0.05, 60 s) reproduces
-  MMseqs2's ALP settings.
-* `lib/alp` is vendored NCBI ALP with one patch (`sls_alignment_evaluer.cpp`,
-  marked "alp-python patch"). In fixed-plan mode, the gapless pre-step
-  originally had a hard-coded 120 s cap; it now honours `max_seconds`, and has
-  no limit when that is unset.
-* Gapless parameters are exact. They reproduce BLAST's ungapped rows with
+- **MMseqs2 settings.** `n_samples=None` (seed 42, tolerances 0.01/0.05, 60 s)
+  reproduces MMseqs2's ALP settings.
+- **Vendored ALP.** `lib/alp` is NCBI ALP with one patch
+  (`sls_alignment_evaluer.cpp`, marked "alp-python patch"). In fixed-plan mode,
+  the gapless pre-step originally had a hard-coded 120 s cap; it now honours
+  `max_seconds`, and has no limit when that is unset.
+- **Gapless parameters** are exact. They reproduce BLAST's ungapped rows with
   Robinson frequencies and MMseqs2's gapless BLOSUM62 entry with
   `bg_freqs="mmseqs"`.
-* C API: see `src/alp_api.h` (`gumbel_compute`, `gumbel_evalue`).
+- **C API:** see `src/alp_api.h` (`gumbel_compute`, `gumbel_evalue`).
 
 ## Comparison with BLAST and MMseqs2 tables
 
@@ -143,3 +116,44 @@ python scripts/compare_blast.py path/to/blast_stat.c \
     --mmseqs path/to/EvalueComputation.h --csv cmp.csv --md cmp.md \
     [--n-samples 100000]   # or --n-samples 0 for ALP adaptive mode
 ```
+
+## Development
+
+The project is managed with [uv](https://docs.astral.sh/uv/) and built with
+[scikit-build-core](https://scikit-build-core.readthedocs.io/) (CMake). You need
+a C++17 compiler; CMake is installed into the isolated build environment
+automatically.
+
+```bash
+uv sync               # create .venv, build libalp, install dev deps
+uv run pytest         # run the tests
+uv build              # build the sdist and a wheel for this machine into dist/
+```
+
+`uv sync` rebuilds the library whenever `CMakeLists.txt` or a C++ source
+changes; the CMake build tree is kept in `build/` so rebuilds are incremental.
+
+The shared library (`libalp.so` / `libalp.dylib` / `libalp.dll`) is looked up in
+the package directories, then in `./build/` (a plain
+`cmake -B build && cmake --build build`); `ALP_LIB=/path/to/libalp.so`
+overrides both.
+
+## Releasing
+
+Releases are fully automated with
+[python-semantic-release](https://python-semantic-release.readthedocs.io/),
+following its recommended GitHub Actions workflow:
+
+- **Pull requests** run `.github/workflows/pull-request.yml`: tests, then
+  wheels and sdist for every platform.
+- **Pushes to `master`** run `.github/workflows/push-master.yml`:
+  1. tests;
+  2. python-semantic-release bumps the version from the conventional commits
+     (and refreshes `uv.lock`);
+  3. cibuildwheel builds one `py3-none` wheel each for Linux (x86_64, aarch64),
+     macOS (universal2) and Windows (AMD64), and `uv build --sdist` builds the
+     sdist;
+  4. the files are attached to the GitHub release and uploaded to PyPI with
+     trusted publishing.
+
+Steps 3–4 only run when a new version was released.
