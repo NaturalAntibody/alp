@@ -20,4 +20,4 @@ __all__ = [
     "compute_gumbel_params",
     "match_mismatch_matrix",
 ]
-__version__ = "1.0.0"
+__version__ = "1.0.1"
