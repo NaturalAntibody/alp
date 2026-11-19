@@ -1,0 +1,15 @@
+name: Pull request flow - test and build
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  # Build every platform on PRs so wheel/sdist breakage shows up before merge.
+  build:
+    needs: test
+    uses: ./.github/workflows/build.yml

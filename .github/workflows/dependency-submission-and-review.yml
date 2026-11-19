@@ -1,0 +1,69 @@
+name: Dependency Submission and Review
+
+on:
+  # trigger manually (e.g. for initial setup)
+  workflow_dispatch:
+  # Every PR gets a full review of all runtime dependencies, not only the changed ones.
+  pull_request:
+    branches: ['main', 'master']
+  # Keep the default branch's dependency graph (used by Dependabot alerts) current.
+  push:
+    branches: ['main', 'master']
+
+# Drop the broad default GITHUB_TOKEN permissions for least-privilege:
+# https://docs.zizmor.sh/audits/#excessive-permissions
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-submission-and-review:
+    name: Dependency Submission and Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # needs to submit dependency graph data
+    env:
+      # The commit whose dependencies are submitted and reviewed: the PR head, or the pushed commit.
+      SNAPSHOT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.SNAPSHOT_SHA }}
+          fetch-depth: 0 # the review needs the repository's root commit
+          persist-credentials: false
+
+      # GitHub parses uv.lock statically and marks every package (pytest, python-semantic-release, ...)
+      # as "runtime". A submitted snapshot takes priority over static parsing of the same manifest, so
+      # we submit uv.lock ourselves with accurate runtime/development scopes. Dependabot alerts and
+      # dependency review both read this snapshot.
+      - name: Submit uv.lock dependency snapshot
+        # Pull requests from forks get a read-only token; skip there instead of failing the job.
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SNAPSHOT_REF: ${{ github.event.pull_request && format('refs/heads/{0}', github.head_ref) || github.ref }}
+        run: |
+          python3 .github/tools/uv_dependency_snapshot.py \
+            --sha "$SNAPSHOT_SHA" --ref "$SNAPSHOT_REF" --job-id "$GITHUB_RUN_ID" \
+            | gh api -X POST "repos/$GITHUB_REPOSITORY/dependency-graph/snapshots" --input -
+
+      # dependency-review-action only reports dependencies that differ between two commits. Comparing
+      # against the repository's root commit (which has no uv.lock or workflow files) makes every
+      # dependency an "added" one, i.e. a full review of all runtime dependencies.
+      - name: Find root commit
+        id: root
+        run: echo "sha=$(git rev-list --max-parents=0 HEAD | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Dependency review (all runtime dependencies)
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          base-ref: ${{ steps.root.outputs.sha }}
+          head-ref: ${{ env.SNAPSHOT_SHA }}
+          fail-on-scopes: runtime
+          # The root commit has no snapshot, so the "snapshot counts differ" warning is expected;
+          # retrying on it would only add a fixed delay.
+          retry-on-snapshot-warnings: false
